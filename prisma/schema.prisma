@@ -1,0 +1,455 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+    provider     = "prisma-client"
+    output       = "../src/generated/prisma"
+    moduleFormat = "cjs"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+// ============================================
+// USER & AUTH
+// ============================================
+
+model User {
+    id            String       @id @default(uuid())
+    email         String       @unique
+    emailVerified Boolean      @default(false)
+    displayName   String?
+    photoUrl      String?
+    provider      AuthProvider @default(LOCAL)
+
+    // Subscription & Limits
+    subscriptionTier      SubscriptionTier @default(FREE)
+    maxCollections        Int              @default(2)
+    maxItemsPerCollection Int              @default(50)
+    maxTags               Int              @default(10)
+    maxDevices            Int              @default(1)
+
+    createdAt  DateTime  @default(now())
+    updatedAt  DateTime  @updatedAt
+    lastSyncAt DateTime?
+
+    // Relations
+    accounts      Account[]
+    sessions      DeviceSession[]
+    collections   Collection[]
+    tags          Tag[]
+    subscriptions Subscription[]
+    syncLogs      SyncLog[]
+
+    @@index([email])
+    @@map("users")
+}
+
+model Account {
+    id                String  @id @default(uuid())
+    userId            String
+    provider          String // "google", "local"
+    providerAccountId String?
+    password          String? // hashed, only for local accounts
+
+    accessToken  String?   @db.Text
+    refreshToken String?   @db.Text
+    idToken      String?   @db.Text
+    expiresAt    DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([provider, providerAccountId])
+    @@index([userId])
+    @@map("accounts")
+}
+
+model DeviceSession {
+    id         String  @id @default(uuid())
+    userId     String
+    deviceId   String // Unique device identifier from mobile
+    deviceName String // "iPhone 14 Pro", "Samsung Galaxy S23"
+    deviceOs   String // "iOS 17.1", "Android 14"
+    appVersion String? // App version
+
+    refreshToken String  @unique @db.Text
+    accessToken  String? @db.Text
+
+    ipAddress String?
+    userAgent String?
+
+    isActive     Boolean  @default(true)
+    lastActiveAt DateTime @default(now())
+    expiresAt    DateTime
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, deviceId])
+    @@index([userId, isActive])
+    @@index([refreshToken])
+    @@index([expiresAt])
+    @@map("device_sessions")
+}
+
+enum AuthProvider {
+    LOCAL
+    GOOGLE
+}
+
+// ============================================
+// CORE DATA (Synced from Mobile)
+// ============================================
+
+model Collection {
+    id             String  @id // UUID from mobile
+    userId         String
+    name           String  @db.VarChar(100)
+    type           String
+    description    String? @db.Text
+    coverImagePath String? // Local path on mobile
+    coverImageUrl  String? // Cloud storage URL
+    itemCount      Int     @default(0)
+
+    // Sync fields
+    version   Int       @default(1)
+    isDeleted Boolean   @default(false)
+    deletedAt DateTime?
+
+    createdAt DateTime
+    updatedAt DateTime
+    syncedAt  DateTime @default(now())
+
+    user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    items Item[]
+
+    @@index([userId, isDeleted])
+    @@index([updatedAt])
+    @@index([syncedAt])
+    @@map("collections")
+}
+
+model Item {
+    id             String    @id // UUID from mobile
+    collectionId   String
+    title          String    @db.VarChar(200)
+    barcode        String?
+    coverImageUrl  String?
+    coverImagePath String?
+    description    String?   @db.Text
+    notes          String?   @db.Text
+    metadata       String?   @db.Text // JSON string
+    condition      String?
+    purchasePrice  Float?
+    purchaseDate   DateTime?
+    currentValue   Float?
+    location       String?
+    isFavorite     Boolean   @default(false)
+    isWishlist     Boolean   @default(false)
+    sortOrder      Int       @default(0)
+    quantity       Int       @default(1)
+
+    // Sync fields
+    version   Int       @default(1)
+    isDeleted Boolean   @default(false)
+    deletedAt DateTime?
+
+    createdAt DateTime
+    updatedAt DateTime
+    syncedAt  DateTime @default(now())
+
+    collection   Collection     @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+    itemTags     ItemTag[]
+    priceHistory PriceHistory[]
+    loans        Loan[]
+
+    @@index([collectionId, isDeleted])
+    @@index([updatedAt])
+    @@index([syncedAt])
+    @@index([barcode])
+    @@index([isFavorite])
+    @@index([isWishlist])
+    @@map("items")
+}
+
+model Tag {
+    id     String  @id // UUID from mobile
+    userId String
+    name   String  @db.VarChar(50)
+    color  String?
+
+    // Sync fields
+    version   Int       @default(1)
+    isDeleted Boolean   @default(false)
+    deletedAt DateTime?
+
+    createdAt DateTime
+    updatedAt DateTime
+    syncedAt  DateTime @default(now())
+
+    user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    itemTags ItemTag[]
+
+    @@unique([userId, name])
+    @@index([userId, isDeleted])
+    @@index([syncedAt])
+    @@map("tags")
+}
+
+model ItemTag {
+    itemId String
+    tagId  String
+
+    item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+    tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+    @@id([itemId, tagId])
+    @@index([tagId])
+    @@map("item_tags")
+}
+
+// ============================================
+// EXTENDED FEATURES
+// ============================================
+
+model PriceHistory {
+    id         String   @id @default(uuid())
+    itemId     String
+    price      Float
+    source     String?  @default("manual") // "manual", "api", "market"
+    notes      String?
+    recordedAt DateTime @default(now())
+
+    item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+    @@index([itemId, recordedAt])
+    @@map("price_history")
+}
+
+model Loan {
+    id              String    @id @default(uuid())
+    itemId          String
+    borrowerName    String
+    borrowerContact String?
+    borrowerEmail   String?
+    loanDate        DateTime
+    dueDate         DateTime?
+    returnedDate    DateTime?
+    notes           String?   @db.Text
+    reminderSent    Boolean   @default(false)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+    @@index([itemId])
+    @@index([returnedDate])
+    @@index([dueDate])
+    @@map("loans")
+}
+
+// ============================================
+// PAYMENTS & SUBSCRIPTIONS
+// ============================================
+
+model Subscription {
+    id            String          @id @default(uuid())
+    userId        String
+    platform      PaymentPlatform
+    productId     String // "premium_monthly", "premium_yearly"
+    purchaseToken String          @unique // Google Play purchase token or Apple transaction ID
+    orderId       String?
+
+    status SubscriptionStatus
+    tier   SubscriptionTier
+
+    purchaseDate DateTime
+    expiryDate   DateTime
+    autoRenewing Boolean  @default(true)
+
+    // Receipt validation
+    receiptData          String?   @db.Text
+    lastVerifiedAt       DateTime?
+    verificationAttempts Int       @default(0)
+
+    // Price tracking
+    priceAmountMicros BigInt?
+    priceCurrencyCode String? @db.VarChar(3)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, status])
+    @@index([expiryDate])
+    @@index([purchaseToken])
+    @@map("subscriptions")
+}
+
+enum PaymentPlatform {
+    GOOGLE_PLAY
+    APPLE_STORE
+}
+
+enum SubscriptionStatus {
+    ACTIVE
+    EXPIRED
+    CANCELLED
+    GRACE_PERIOD
+    ON_HOLD
+    PAUSED
+}
+
+enum SubscriptionTier {
+    FREE
+    PREMIUM
+    ULTIMATE
+}
+
+// ============================================
+// SYNC INFRASTRUCTURE
+// ============================================
+
+model SyncLog {
+    id       String @id @default(uuid())
+    userId   String
+    deviceId String
+
+    syncType  SyncType
+    direction String // "push", "pull", "bidirectional"
+
+    collectionsCount Int @default(0)
+    itemsCount       Int @default(0)
+    tagsCount        Int @default(0)
+
+    conflictsResolved Int     @default(0)
+    errors            String? @db.Text
+    status            String  @default("success") // "success", "partial", "failed"
+
+    startedAt   DateTime
+    completedAt DateTime?
+    durationMs  Int?
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, startedAt])
+    @@index([status])
+    @@map("sync_logs")
+}
+
+enum SyncType {
+    FULL
+    INCREMENTAL
+    CONFLICT_RESOLUTION
+}
+
+// ============================================
+// SUGGESTIONS & ANALYTICS
+// ============================================
+
+model CollectionSuggestion {
+    id         String   @id @default(uuid())
+    name       String
+    type       String
+    category   String? // "hobby", "professional", "entertainment"
+    usageCount Int      @default(1)
+    lastUsedAt DateTime @default(now())
+
+    @@unique([name, type])
+    @@index([type, usageCount])
+    @@index([category])
+    @@map("collection_suggestions")
+}
+
+model TagSuggestion {
+    id         String   @id @default(uuid())
+    name       String   @unique
+    category   String? // For grouping similar tags
+    usageCount Int      @default(1)
+    lastUsedAt DateTime @default(now())
+
+    @@index([usageCount])
+    @@index([category])
+    @@map("tag_suggestions")
+}
+
+model UserActivity {
+    id         String  @id @default(uuid())
+    userId     String? // Nullable for anonymous analytics
+    action     String // "collection_created", "item_added", "sync_completed"
+    entityType String? // "collection", "item", "tag"
+    entityId   String?
+    metadata   String? @db.Text // JSON
+    deviceInfo String?
+
+    timestamp DateTime @default(now())
+
+    @@index([userId, timestamp])
+    @@index([action])
+    @@index([timestamp])
+    @@map("user_activities")
+}
+
+// ============================================
+// NOTIFICATIONS (Future)
+// ============================================
+
+model NotificationToken {
+    id       String  @id @default(uuid())
+    userId   String
+    deviceId String
+    token    String  @unique
+    platform String // "fcm", "apns"
+    isActive Boolean @default(true)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([userId, deviceId])
+    @@index([userId, isActive])
+    @@map("notification_tokens")
+}
+
+model NotificationLog {
+    id      String  @id @default(uuid())
+    userId  String
+    type    String // "loan_reminder", "subscription_expiry", "sync_completed"
+    title   String
+    message String  @db.Text
+    data    String? @db.Text // JSON
+
+    sent   Boolean   @default(false)
+    sentAt DateTime?
+    error  String?   @db.Text
+
+    createdAt DateTime @default(now())
+
+    @@index([userId, sent])
+    @@index([type])
+    @@map("notification_logs")
+}
+
+// ============================================
+// SYSTEM MAINTENANCE
+// ============================================
+
+model SystemConfig {
+    id    String @id @default(uuid())
+    key   String @unique
+    value String @db.Text
+
+    updatedAt DateTime @updatedAt
+
+    @@map("system_config")
+}

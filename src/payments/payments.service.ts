@@ -798,23 +798,23 @@ export class PaymentsService {
     eventId: string,
     payload: unknown,
   ): Promise<boolean> {
-    const key = `webhook_event:${platform}:${eventId}`;
     try {
-      await this.prisma.systemConfig.create({
+      await this.prisma.paymentWebhookEvent.create({
         data: {
-          key,
-          value: JSON.stringify({
-            processedAt: new Date().toISOString(),
-            platform,
-            eventId,
-            payload,
-          }),
+          platform:
+            platform === 'google'
+              ? PaymentPlatform.GOOGLE_PLAY
+              : PaymentPlatform.APPLE_STORE,
+          eventId,
+          payload: JSON.stringify(payload),
         },
       });
       return true;
     } catch (error: any) {
       if (error?.code === 'P2002') {
-        this.logger.warn(`Duplicate webhook ignored: ${key}`);
+        this.logger.warn(
+          `Duplicate webhook ignored: platform=${platform}, eventId=${eventId}`,
+        );
         return false;
       }
       throw error;

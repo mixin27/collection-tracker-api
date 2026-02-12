@@ -11,7 +11,7 @@ jest.mock('@/subscription/subscription-profile.service', () => ({
 describe('PaymentsService', () => {
   const makeService = () => {
     const prisma = {
-      systemConfig: {
+      paymentWebhookEvent: {
         create: jest.fn(),
       },
       subscription: {
@@ -53,7 +53,7 @@ describe('PaymentsService', () => {
       receiptData: '{}',
     });
 
-    prisma.systemConfig.create
+    prisma.paymentWebhookEvent.create
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce({ code: 'P2002' });
     prisma.subscription.findUnique.mockResolvedValue({ userId: 'u1' });

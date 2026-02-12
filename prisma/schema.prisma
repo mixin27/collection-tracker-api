@@ -297,6 +297,19 @@ model Subscription {
     @@map("subscriptions")
 }
 
+model PaymentWebhookEvent {
+    id          String          @id @default(uuid())
+    platform    PaymentPlatform
+    eventId     String
+    payload     String?         @db.Text
+    processedAt DateTime        @default(now())
+    createdAt   DateTime        @default(now())
+
+    @@unique([platform, eventId])
+    @@index([createdAt])
+    @@map("payment_webhook_events")
+}
+
 enum PaymentPlatform {
     GOOGLE_PLAY
     APPLE_STORE

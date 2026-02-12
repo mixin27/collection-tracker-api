@@ -18,6 +18,7 @@ import {
   AdminUpdateUserTierDto,
 } from './dto/admin-users.dto';
 import { SubscriptionTier } from '@/generated/prisma/enums';
+import { AdminAuditQueryDto } from './dto/admin-audit.dto';
 
 @Injectable()
 export class AdminService {
@@ -637,6 +638,67 @@ export class AdminService {
     };
   }
 
+  async getAdminAuditLogs(query: AdminAuditQueryDto) {
+    const limit = query.limit ?? 50;
+    const offset = query.offset ?? 0;
+
+    const where: any = {
+      action: {
+        startsWith: 'admin_',
+      },
+    };
+
+    if (query.action) where.action = query.action;
+    if (query.userId) where.userId = query.userId;
+    if (query.from || query.to) {
+      where.timestamp = {};
+      if (query.from) where.timestamp.gte = new Date(query.from);
+      if (query.to) where.timestamp.lte = new Date(query.to);
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.userActivity.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.userActivity.count({ where }),
+    ]);
+
+    const actorIds = Array.from(
+      new Set(rows.map((row) => row.userId).filter((id): id is string => !!id)),
+    );
+    const actorRows = actorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        })
+      : [];
+    const actorMap = new Map(actorRows.map((actor) => [actor.id, actor]));
+
+    return {
+      logs: rows.map((row) => ({
+        id: row.id,
+        timestamp: row.timestamp,
+        action: row.action,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        actor: row.userId ? actorMap.get(row.userId) || null : null,
+        metadataRaw: row.metadata,
+        metadata: this.safeParseJson(row.metadata),
+      })),
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total,
+    };
+  }
+
   private async getJsonSystemConfig(
     key: string,
   ): Promise<Record<string, unknown> | null> {
@@ -685,5 +747,14 @@ export class AdminService {
     >('app.limits');
     if (!limits) return null;
     return limits[tier.toLowerCase()] || null;
+  }
+
+  private safeParseJson(value: string | null) {
+    if (!value) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
   }
 }

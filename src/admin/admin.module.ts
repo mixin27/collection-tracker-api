@@ -7,6 +7,7 @@ import { AdminSubscriptionsController } from './admin-subscriptions.controller';
 import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
 import { AdminMetricsController } from './admin-metrics.controller';
 import { AdminUsersController } from './admin-users.controller';
+import { AdminAuditController } from './admin-audit.controller';
 
 @Module({
   controllers: [
@@ -14,6 +15,7 @@ import { AdminUsersController } from './admin-users.controller';
     AdminSubscriptionsController,
     AdminMetricsController,
     AdminUsersController,
+    AdminAuditController,
   ],
   providers: [AdminService, SubscriptionProfileService, PrismaService, AdminGuard],
 })

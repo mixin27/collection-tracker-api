@@ -12,6 +12,12 @@ import {
 import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
 import { SubscriptionStatus } from '@/generated/prisma/client';
 import { AdminMetricsQueryDto } from './dto/admin-metrics.dto';
+import {
+  AdminListUsersQueryDto,
+  AdminUpdateUserLimitsDto,
+  AdminUpdateUserTierDto,
+} from './dto/admin-users.dto';
+import { SubscriptionTier } from '@/generated/prisma/enums';
 
 @Injectable()
 export class AdminService {
@@ -434,6 +440,203 @@ export class AdminService {
     };
   }
 
+  async listUsers(query: AdminListUsersQueryDto) {
+    const limit = query.limit ?? 50;
+    const offset = query.offset ?? 0;
+    const where: any = {};
+
+    if (query.q) {
+      where.OR = [
+        { email: { contains: query.q, mode: 'insensitive' } },
+        { displayName: { contains: query.q, mode: 'insensitive' } },
+      ];
+    }
+    if (query.tier) {
+      where.subscriptionTier = query.tier;
+    }
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          photoUrl: true,
+          subscriptionTier: true,
+          maxCollections: true,
+          maxItemsPerCollection: true,
+          maxTags: true,
+          maxDevices: true,
+          createdAt: true,
+          updatedAt: true,
+          lastSyncAt: true,
+          _count: {
+            select: {
+              subscriptions: true,
+              collections: true,
+              sessions: true,
+            },
+          },
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      users,
+      total,
+      limit,
+      offset,
+      hasMore: offset + users.length < total,
+    };
+  }
+
+  async getUserDetails(userId: string) {
+    const [user, subscriptions, activeSessions] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          emailVerified: true,
+          displayName: true,
+          photoUrl: true,
+          provider: true,
+          subscriptionTier: true,
+          maxCollections: true,
+          maxItemsPerCollection: true,
+          maxTags: true,
+          maxDevices: true,
+          createdAt: true,
+          updatedAt: true,
+          lastSyncAt: true,
+        },
+      }),
+      this.prisma.subscription.findMany({
+        where: { userId },
+        orderBy: [{ expiryDate: 'desc' }, { createdAt: 'desc' }],
+        take: 20,
+      }),
+      this.prisma.deviceSession.count({
+        where: {
+          userId,
+          isActive: true,
+          expiresAt: { gt: new Date() },
+        },
+      }),
+    ]);
+
+    if (!user) {
+      return { found: false };
+    }
+
+    return {
+      found: true,
+      user,
+      subscriptions,
+      activeSessions,
+    };
+  }
+
+  async updateUserTier(
+    adminUserId: string,
+    userId: string,
+    dto: AdminUpdateUserTierDto,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      return { updated: false, reason: 'not_found' };
+    }
+
+    const applyTierLimits = dto.applyTierLimits ?? true;
+    const tierLimits = this.getLimitsForTier(dto.tier);
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        subscriptionTier: dto.tier as unknown as any,
+        ...(applyTierLimits && tierLimits
+          ? {
+              maxCollections: tierLimits.maxCollections,
+              maxItemsPerCollection: tierLimits.maxItemsPerCollection,
+              maxTags: tierLimits.maxTags,
+              maxDevices: tierLimits.maxDevices,
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        subscriptionTier: true,
+        maxCollections: true,
+        maxItemsPerCollection: true,
+        maxTags: true,
+        maxDevices: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.logAdminChange(adminUserId, 'admin_user_tier_updated', {
+      userId,
+      tier: dto.tier,
+      applyTierLimits,
+    });
+
+    return {
+      updated: true,
+      user: updated,
+    };
+  }
+
+  async updateUserLimits(
+    adminUserId: string,
+    userId: string,
+    dto: AdminUpdateUserLimitsDto,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      return { updated: false, reason: 'not_found' };
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        maxCollections: dto.maxCollections,
+        maxItemsPerCollection: dto.maxItemsPerCollection,
+        maxTags: dto.maxTags,
+        maxDevices: dto.maxDevices,
+      },
+      select: {
+        id: true,
+        subscriptionTier: true,
+        maxCollections: true,
+        maxItemsPerCollection: true,
+        maxTags: true,
+        maxDevices: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.logAdminChange(adminUserId, 'admin_user_limits_updated', {
+      userId,
+      limits: dto,
+    });
+
+    return {
+      updated: true,
+      user: updated,
+    };
+  }
+
   private async getJsonSystemConfig(
     key: string,
   ): Promise<Record<string, unknown> | null> {
@@ -466,5 +669,21 @@ export class AdminService {
         metadata: JSON.stringify(metadata),
       },
     });
+  }
+
+  private getLimitsForTier(tier: SubscriptionTier) {
+    const limits = this.configService.get<
+      Record<
+        string,
+        {
+          maxCollections: number;
+          maxItemsPerCollection: number;
+          maxTags: number;
+          maxDevices: number;
+        }
+      >
+    >('app.limits');
+    if (!limits) return null;
+    return limits[tier.toLowerCase()] || null;
   }
 }

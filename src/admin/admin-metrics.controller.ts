@@ -1,9 +1,10 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AdminOnly } from '@/common/decorators/admin.decorator';
 import { AdminGuard } from '@/common/guards/admin.guard';
 import { AdminService } from './admin.service';
 import { AdminMetricsQueryDto } from './dto/admin-metrics.dto';
+import type { Response } from 'express';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -31,5 +32,19 @@ export class AdminMetricsController {
   @ApiResponse({ status: 200, description: 'Dashboard cards payload' })
   async getCards(@Query() query: AdminMetricsQueryDto) {
     return this.adminService.getDashboardCards(query);
+  }
+
+  @Get('overview/export.json')
+  @ApiOperation({ summary: 'Export dashboard overview metrics as JSON' })
+  @ApiResponse({ status: 200, description: 'JSON export generated' })
+  async exportOverview(
+    @Query() query: AdminMetricsQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { filename, json } =
+      await this.adminService.exportDashboardOverviewJson(query);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return json;
   }
 }

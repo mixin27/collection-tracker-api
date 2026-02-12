@@ -699,6 +699,65 @@ export class AdminService {
     };
   }
 
+  async exportAdminAuditCsv(query: AdminAuditQueryDto) {
+    const result = await this.getAdminAuditLogs({
+      ...query,
+      limit: query.limit ?? 1000,
+      offset: query.offset ?? 0,
+    });
+
+    const escapeCsv = (value: unknown) => {
+      const raw = value == null ? '' : String(value);
+      const escaped = raw.replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
+
+    const header = [
+      'timestamp',
+      'action',
+      'entityType',
+      'entityId',
+      'actorId',
+      'actorEmail',
+      'metadata',
+    ];
+
+    const rows = result.logs.map((log) =>
+      [
+        log.timestamp.toISOString(),
+        log.action,
+        log.entityType ?? '',
+        log.entityId ?? '',
+        log.actor?.id ?? '',
+        log.actor?.email ?? '',
+        JSON.stringify(log.metadata ?? {}),
+      ]
+        .map(escapeCsv)
+        .join(','),
+    );
+
+    const csv = [header.join(','), ...rows].join('\n');
+    const filename = `admin-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    return { csv, filename, total: result.total };
+  }
+
+  async exportDashboardOverviewJson(query: AdminMetricsQueryDto) {
+    const data = await this.getDashboardOverview(query);
+    const filename = `admin-metrics-overview-${new Date().toISOString().slice(0, 10)}.json`;
+    return {
+      filename,
+      json: JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          ...data,
+        },
+        null,
+        2,
+      ),
+    };
+  }
+
   private async getJsonSystemConfig(
     key: string,
   ): Promise<Record<string, unknown> | null> {

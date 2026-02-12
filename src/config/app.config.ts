@@ -109,4 +109,23 @@ export default registerAs('app', () => ({
       ultimate_yearly: 'ULTIMATE',
     },
   },
+
+  appUpdate: {
+    android: {
+      latestVersion: process.env.APP_UPDATE_ANDROID_LATEST_VERSION || null,
+      minSupportedVersion:
+        process.env.APP_UPDATE_ANDROID_MIN_SUPPORTED_VERSION || null,
+      forceUpdate: (process.env.APP_UPDATE_ANDROID_FORCE_UPDATE || 'false') === 'true',
+      storeUrl: process.env.APP_UPDATE_ANDROID_STORE_URL || null,
+      releaseNotes: process.env.APP_UPDATE_ANDROID_RELEASE_NOTES || null,
+    },
+    ios: {
+      latestVersion: process.env.APP_UPDATE_IOS_LATEST_VERSION || null,
+      minSupportedVersion:
+        process.env.APP_UPDATE_IOS_MIN_SUPPORTED_VERSION || null,
+      forceUpdate: (process.env.APP_UPDATE_IOS_FORCE_UPDATE || 'false') === 'true',
+      storeUrl: process.env.APP_UPDATE_IOS_STORE_URL || null,
+      releaseNotes: process.env.APP_UPDATE_IOS_RELEASE_NOTES || null,
+    },
+  },
 }));

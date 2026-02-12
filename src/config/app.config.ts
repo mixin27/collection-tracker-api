@@ -65,4 +65,9 @@ export default registerAs('app', () => ({
     startAt: process.env.GLOBAL_FREE_START_AT || null,
     endAt: process.env.GLOBAL_FREE_END_AT || null,
   },
+
+  // Admin controls
+  adminEmails: process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(',').map((email) => email.trim())
+    : [],
 }));

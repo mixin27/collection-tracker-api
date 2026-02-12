@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto, UpdateItemDto } from './dto/item.dto';
+import { CreatePriceHistoryDto } from './dto/price-history.dto';
 
 @Injectable()
 export class ItemsService {
@@ -353,5 +354,65 @@ export class ItemsService {
 
     this.logger.log(`Sort order updated for ${updates.length} items`);
     return { updated: updates.length };
+  }
+
+  /**
+   * Create a price history record for an item
+   */
+  async createPriceHistory(
+    userId: string,
+    itemId: string,
+    dto: CreatePriceHistoryDto,
+  ) {
+    const item = await this.prisma.item.findFirst({
+      where: {
+        id: itemId,
+        collection: { userId },
+        isDeleted: false,
+      },
+      select: { id: true },
+    });
+
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
+    const entry = await this.prisma.priceHistory.create({
+      data: {
+        itemId,
+        price: dto.price,
+        source: dto.source,
+        notes: dto.notes,
+        recordedAt: dto.recordedAt ? new Date(dto.recordedAt) : new Date(),
+      },
+    });
+
+    return entry;
+  }
+
+  /**
+   * Get price history records for an item
+   */
+  async getPriceHistory(userId: string, itemId: string, limit: number = 50) {
+    const item = await this.prisma.item.findFirst({
+      where: {
+        id: itemId,
+        collection: { userId },
+        isDeleted: false,
+      },
+      select: { id: true },
+    });
+
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
+    const history = await this.prisma.priceHistory.findMany({
+      where: { itemId },
+      orderBy: { recordedAt: 'desc' },
+      take: limit,
+    });
+
+    return { itemId, history, limit };
   }
 }

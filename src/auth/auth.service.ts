@@ -15,6 +15,7 @@ import {
   AuthResponseDto,
 } from './dto/auth.dto';
 import * as bcrypt from 'bcrypt';
+import axios from 'axios';
 import { AuthProvider, SubscriptionTier } from '@/generated/prisma/client';
 import { JwtPayload } from '@/common/strategies/jwt.strategy';
 
@@ -540,25 +541,64 @@ export class AuthService {
   }
 
   /**
-   * Verify Google ID token (simplified - implement with google-auth-library)
+   * Verify Google ID token using Google's tokeninfo endpoint.
    */
   private async verifyGoogleIdToken(idToken: string): Promise<any> {
-    // TODO: Implement actual Google token verification
-    // Use: const { OAuth2Client } = require('google-auth-library');
-    // For now, this is a placeholder
-
     try {
-      // Decode token payload (NOT SECURE - implement proper verification)
-      const payload = JSON.parse(
-        Buffer.from(idToken.split('.')[1], 'base64').toString(),
+      const googleClientId = this.configService.get<string>('google.clientId');
+      if (!googleClientId) {
+        this.logger.error(
+          'GOOGLE_CLIENT_ID is not configured. Google authentication is disabled.',
+        );
+        return null;
+      }
+
+      const response = await axios.get(
+        'https://oauth2.googleapis.com/tokeninfo',
+        {
+          params: { id_token: idToken },
+          timeout: 5000,
+        },
       );
+
+      const payload = response.data as {
+        sub?: string;
+        email?: string;
+        name?: string;
+        picture?: string;
+        email_verified?: string | boolean;
+        aud?: string;
+        iss?: string;
+        exp?: string;
+      };
+
+      const isAudienceValid = payload.aud === googleClientId;
+      const isIssuerValid =
+        payload.iss === 'accounts.google.com' ||
+        payload.iss === 'https://accounts.google.com';
+      const expiresAt = Number(payload.exp ?? '0');
+      const isExpired = !expiresAt || expiresAt * 1000 <= Date.now();
+      const isEmailVerified =
+        payload.email_verified === true || payload.email_verified === 'true';
+
+      if (
+        !payload.sub ||
+        !payload.email ||
+        !isAudienceValid ||
+        !isIssuerValid ||
+        isExpired ||
+        !isEmailVerified
+      ) {
+        this.logger.warn('Google token verification failed claim validation');
+        return null;
+      }
 
       return {
         sub: payload.sub,
         email: payload.email,
         name: payload.name,
         picture: payload.picture,
-        email_verified: payload.email_verified,
+        email_verified: true,
       };
     } catch (error) {
       this.logger.error('Failed to verify Google token', error);

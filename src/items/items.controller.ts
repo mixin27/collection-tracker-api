@@ -24,6 +24,10 @@ import {
   ItemResponseDto,
   ItemListResponseDto,
 } from './dto/item.dto';
+import {
+  CreatePriceHistoryDto,
+  PriceHistoryResponseDto,
+} from './dto/price-history.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @ApiTags('items')
@@ -89,6 +93,38 @@ export class ItemsController {
         search,
       },
     );
+  }
+
+  @Post(':id/price-history')
+  @ApiOperation({ summary: 'Add price history entry for an item' })
+  @ApiResponse({
+    status: 201,
+    description: 'Price history entry created',
+    type: PriceHistoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Item not found' })
+  async createPriceHistory(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Body() dto: CreatePriceHistoryDto,
+  ) {
+    return this.itemsService.createPriceHistory(userId, id, dto);
+  }
+
+  @Get(':id/price-history')
+  @ApiOperation({ summary: 'Get price history for an item' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Price history list',
+  })
+  @ApiResponse({ status: 404, description: 'Item not found' })
+  async getPriceHistory(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.itemsService.getPriceHistory(userId, id, limit ? +limit : 50);
   }
 
   @Get(':id')

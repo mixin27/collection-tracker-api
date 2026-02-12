@@ -32,6 +32,7 @@ import { CollectionModule } from './collection/collection.module';
 import { ItemsModule } from './items/items.module';
 import { TagsModule } from './tags/tags.module';
 import { SyncModule } from './sync/sync.module';
+import { LoansModule } from './loans/loans.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { SyncModule } from './sync/sync.module';
     ItemsModule,
     TagsModule,
     SyncModule,
+    LoansModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,

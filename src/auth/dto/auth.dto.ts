@@ -27,7 +27,7 @@ export class RegisterDto {
   displayName?: string;
 
   @ApiProperty({ example: 'device-uuid-123' })
-  @IsUUID()
+  @IsString()
   deviceId: string;
 
   @ApiProperty({ example: 'iPhone 14 Pro' })
@@ -54,7 +54,7 @@ export class LoginDto {
   password: string;
 
   @ApiProperty({ example: 'device-uuid-123' })
-  @IsUUID()
+  @IsString()
   deviceId: string;
 
   @ApiProperty({ example: 'iPhone 14 Pro' })
@@ -77,7 +77,7 @@ export class GoogleAuthDto {
   idToken: string;
 
   @ApiProperty({ example: 'device-uuid-123' })
-  @IsUUID()
+  @IsString()
   deviceId: string;
 
   @ApiProperty({ example: 'iPhone 14 Pro' })
@@ -100,7 +100,7 @@ export class RefreshTokenDto {
   refreshToken: string;
 
   @ApiProperty({ example: 'device-uuid-123' })
-  @IsUUID()
+  @IsString()
   deviceId: string;
 }
 

@@ -31,6 +31,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { CollectionModule } from './collection/collection.module';
 import { ItemsModule } from './items/items.module';
 import { TagsModule } from './tags/tags.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -60,10 +61,10 @@ import { TagsModule } from './tags/tags.module';
     CollectionModule,
     ItemsModule,
     TagsModule,
+    SyncModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,
-    // SyncModule,
     // PaymentsModule,
     // StorageModule,
     // LoansModule,

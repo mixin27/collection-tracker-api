@@ -10,6 +10,8 @@ import {
   AdminUpdateSubscriptionDto,
 } from './dto/admin-subscriptions.dto';
 import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
+import { SubscriptionStatus } from '@/generated/prisma/client';
+import { AdminMetricsQueryDto } from './dto/admin-metrics.dto';
 
 @Injectable()
 export class AdminService {
@@ -177,6 +179,258 @@ export class AdminService {
     return {
       updated: true,
       subscription: updated,
+    };
+  }
+
+  async getDashboardOverview(query: AdminMetricsQueryDto) {
+    const now = new Date();
+    const days = query.days ?? 7;
+    const top = query.top ?? 10;
+
+    const from = query.from
+      ? new Date(query.from)
+      : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const to = query.to ? new Date(query.to) : now;
+    const inRange = { gte: from, lte: to };
+    const activeStatuses = [SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD];
+
+    const [
+      totalUsers,
+      newUsersInRange,
+      activeSubscriberUsers,
+      subscriptionByTier,
+      subscriptionByPlatform,
+      expiringIn7Days,
+      revenueByCurrencyRaw,
+      totalEvents,
+      uniqueActivityUsers,
+      topActionsRaw,
+      dailyRaw,
+      webhookVolume24h,
+      entitlementsConfig,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({
+        where: { createdAt: inRange },
+      }),
+      this.prisma.subscription.findMany({
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: { gt: now },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.subscription.groupBy({
+        by: ['tier'],
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: { gt: now },
+        },
+        _count: { tier: true },
+      }),
+      this.prisma.subscription.groupBy({
+        by: ['platform'],
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: { gt: now },
+        },
+        _count: { platform: true },
+      }),
+      this.prisma.subscription.count({
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: {
+            gt: now,
+            lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+      this.prisma.subscription.groupBy({
+        by: ['priceCurrencyCode'],
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: { gt: now },
+          priceAmountMicros: { not: null },
+          priceCurrencyCode: { not: null },
+        },
+        _sum: {
+          priceAmountMicros: true,
+        },
+      }),
+      this.prisma.userActivity.count({
+        where: { timestamp: inRange },
+      }),
+      this.prisma.userActivity.findMany({
+        where: {
+          timestamp: inRange,
+          userId: { not: null },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.userActivity.groupBy({
+        by: ['action'],
+        where: { timestamp: inRange },
+        _count: { action: true },
+        orderBy: { _count: { action: 'desc' } },
+        take: top,
+      }),
+      this.prisma.$queryRaw<
+        Array<{ day: Date; count: bigint | number | string }>
+      >`SELECT date_trunc('day', "timestamp") AS day, COUNT(*)::bigint AS count
+        FROM "user_activities"
+        WHERE "timestamp" >= ${from} AND "timestamp" <= ${to}
+        GROUP BY 1
+        ORDER BY 1 ASC`,
+      this.prisma.paymentWebhookEvent.groupBy({
+        by: ['platform'],
+        where: {
+          createdAt: {
+            gte: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          },
+        },
+        _count: { platform: true },
+      }),
+      this.getEntitlementsConfig(),
+    ]);
+
+    return {
+      range: { from: from.toISOString(), to: to.toISOString() },
+      users: {
+        total: totalUsers,
+        newInRange: newUsersInRange,
+      },
+      subscriptions: {
+        activeSubscribers: activeSubscriberUsers.length,
+        expiringIn7Days,
+        byTier: subscriptionByTier.map((x) => ({
+          tier: x.tier,
+          count: x._count.tier,
+        })),
+        byPlatform: subscriptionByPlatform.map((x) => ({
+          platform: x.platform,
+          count: x._count.platform,
+        })),
+        revenueProxyMonthlyByCurrency: revenueByCurrencyRaw.map((x) => ({
+          currency: x.priceCurrencyCode,
+          totalMicros: x._sum.priceAmountMicros
+            ? Number(x._sum.priceAmountMicros)
+            : 0,
+        })),
+      },
+      activity: {
+        totalEvents,
+        uniqueUsers: uniqueActivityUsers.length,
+        topActions: topActionsRaw.map((x) => ({
+          action: x.action,
+          count: x._count.action,
+        })),
+        daily: dailyRaw.map((row) => ({
+          day: new Date(row.day).toISOString(),
+          count: Number(row.count),
+        })),
+      },
+      webhooks: {
+        last24HoursByPlatform: webhookVolume24h.map((x) => ({
+          platform: x.platform,
+          count: x._count.platform,
+        })),
+      },
+      entitlements: entitlementsConfig,
+    };
+  }
+
+  async getDashboardCards(query: AdminMetricsQueryDto) {
+    const now = new Date();
+    const days = query.days ?? 7;
+    const from = query.from
+      ? new Date(query.from)
+      : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const to = query.to ? new Date(query.to) : now;
+    const inRange = { gte: from, lte: to };
+
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+    const activeStatuses = [SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD];
+
+    const [
+      totalUsers,
+      newUsersRange,
+      newUsersToday,
+      newUsersYesterday,
+      activeSubscribers,
+      expiringSoon,
+      activityRange,
+      activityToday,
+      activityYesterday,
+      webhook24h,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { createdAt: inRange } }),
+      this.prisma.user.count({ where: { createdAt: { gte: startOfToday, lte: now } } }),
+      this.prisma.user.count({
+        where: { createdAt: { gte: startOfYesterday, lt: startOfToday } },
+      }),
+      this.prisma.subscription.findMany({
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: { gt: now },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.subscription.count({
+        where: {
+          status: { in: activeStatuses },
+          expiryDate: {
+            gt: now,
+            lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+      this.prisma.userActivity.count({ where: { timestamp: inRange } }),
+      this.prisma.userActivity.count({
+        where: { timestamp: { gte: startOfToday, lte: now } },
+      }),
+      this.prisma.userActivity.count({
+        where: { timestamp: { gte: startOfYesterday, lt: startOfToday } },
+      }),
+      this.prisma.paymentWebhookEvent.count({
+        where: {
+          createdAt: {
+            gte: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+    ]);
+
+    const dailyUserDelta =
+      newUsersYesterday === 0
+        ? (newUsersToday > 0 ? 100 : 0)
+        : ((newUsersToday - newUsersYesterday) / newUsersYesterday) * 100;
+    const dailyActivityDelta =
+      activityYesterday === 0
+        ? (activityToday > 0 ? 100 : 0)
+        : ((activityToday - activityYesterday) / activityYesterday) * 100;
+
+    return {
+      range: { from: from.toISOString(), to: to.toISOString(), days },
+      cards: {
+        users_total: totalUsers,
+        users_new_range: newUsersRange,
+        users_new_today: newUsersToday,
+        users_new_daily_delta_pct: Number(dailyUserDelta.toFixed(2)),
+        subscribers_active: activeSubscribers.length,
+        subscriptions_expiring_7d: expiringSoon,
+        activity_events_range: activityRange,
+        activity_events_today: activityToday,
+        activity_daily_delta_pct: Number(dailyActivityDelta.toFixed(2)),
+        webhooks_24h: webhook24h,
+      },
     };
   }
 

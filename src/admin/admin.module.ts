@@ -5,9 +5,10 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AdminGuard } from '@/common/guards/admin.guard';
 import { AdminSubscriptionsController } from './admin-subscriptions.controller';
 import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
+import { AdminMetricsController } from './admin-metrics.controller';
 
 @Module({
-  controllers: [AdminController, AdminSubscriptionsController],
+  controllers: [AdminController, AdminSubscriptionsController, AdminMetricsController],
   providers: [AdminService, SubscriptionProfileService, PrismaService, AdminGuard],
 })
 export class AdminModule {}

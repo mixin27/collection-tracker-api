@@ -33,6 +33,7 @@ import { ItemsModule } from './items/items.module';
 import { TagsModule } from './tags/tags.module';
 import { SyncModule } from './sync/sync.module';
 import { LoansModule } from './loans/loans.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { LoansModule } from './loans/loans.module';
     TagsModule,
     SyncModule,
     LoansModule,
+    StorageModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,

@@ -36,6 +36,7 @@ import { LoansModule } from './loans/loans.module';
 import { StorageModule } from './storage/storage.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
+import { SuggestionsModule } from './suggestions/suggestions.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { PaymentsModule } from './payments/payments.module';
     StorageModule,
     AdminModule,
     PaymentsModule,
+    SuggestionsModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,

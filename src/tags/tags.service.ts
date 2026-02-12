@@ -68,6 +68,20 @@ export class TagsService {
       },
     });
 
+    // Track suggestion usage to improve global tag suggestions.
+    await this.prisma.tagSuggestion.upsert({
+      where: { name: dto.name.trim() },
+      update: {
+        usageCount: { increment: 1 },
+        lastUsedAt: new Date(),
+      },
+      create: {
+        name: dto.name.trim(),
+        usageCount: 1,
+        lastUsedAt: new Date(),
+      },
+    });
+
     this.logger.log(`Tag created: ${tag.id} (${tag.name}) for user ${userId}`);
     return tag;
   }

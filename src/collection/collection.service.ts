@@ -59,6 +59,26 @@ export class CollectionService {
       },
     });
 
+    // Track suggestion usage to improve future collection suggestions.
+    await this.prisma.collectionSuggestion.upsert({
+      where: {
+        name_type: {
+          name: dto.name.trim(),
+          type: dto.type.trim(),
+        },
+      },
+      update: {
+        usageCount: { increment: 1 },
+        lastUsedAt: new Date(),
+      },
+      create: {
+        name: dto.name.trim(),
+        type: dto.type.trim(),
+        usageCount: 1,
+        lastUsedAt: new Date(),
+      },
+    });
+
     this.logger.log(`Collection created: ${collection.id} for user ${userId}`);
     return collection;
   }

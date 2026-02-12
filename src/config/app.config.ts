@@ -50,4 +50,19 @@ export default registerAs('app', () => ({
       maxDevices: parseInt(process.env.ULTIMATE_MAX_DEVICES!, 10) || 5,
     },
   },
+
+  // Trial settings
+  trial: {
+    enabled: (process.env.TRIAL_ENABLED || 'true') === 'true',
+    days: parseInt(process.env.TRIAL_DAYS || '14', 10),
+    tier: process.env.TRIAL_TIER || 'PREMIUM',
+  },
+
+  // Global promotional access window
+  globalFreeAccess: {
+    enabled: (process.env.GLOBAL_FREE_ENABLED || 'false') === 'true',
+    tier: process.env.GLOBAL_FREE_TIER || 'PREMIUM',
+    startAt: process.env.GLOBAL_FREE_START_AT || null,
+    endAt: process.env.GLOBAL_FREE_END_AT || null,
+  },
 }));

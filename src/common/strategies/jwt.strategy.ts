@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EntitlementsService } from '@/subscription/entitlements.service';
 
 export interface JwtPayload {
   sub: string; // userId
@@ -17,6 +18,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private entitlementsService: EntitlementsService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -38,6 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         maxItemsPerCollection: true,
         maxTags: true,
         maxDevices: true,
+        createdAt: true,
       },
     });
 
@@ -54,19 +57,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('Session expired or invalid');
     }
 
+    const entitlements = await this.entitlementsService.resolveForUser(user);
+
     return {
       userId: user.id,
       email: user.email,
       displayName: user.displayName,
-      subscriptionTier: user.subscriptionTier,
+      subscriptionTier: entitlements.tier,
       deviceId: payload.deviceId,
       sessionId: payload.sessionId,
-      limits: {
-        maxCollections: user.maxCollections,
-        maxItemsPerCollection: user.maxItemsPerCollection,
-        maxTags: user.maxTags,
-        maxDevices: user.maxDevices,
-      },
+      entitlementSource: entitlements.source,
+      limits: entitlements.limits,
     };
   }
 }

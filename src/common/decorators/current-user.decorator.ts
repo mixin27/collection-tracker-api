@@ -4,6 +4,7 @@ export interface AuthUser {
   userId: string;
   email: string;
   subscriptionTier: string;
+  entitlementSource?: 'BASE' | 'PAID_SUBSCRIPTION' | 'TRIAL' | 'GLOBAL_FREE';
   deviceId?: string;
   limits: AuthUserLimits;
 }

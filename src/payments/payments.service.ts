@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { createSign, createVerify, X509Certificate } from 'crypto';
+import {
+  createHash,
+  createSign,
+  createVerify,
+  X509Certificate,
+} from 'crypto';
 import {
   PaymentPlatform,
   SubscriptionStatus,
@@ -131,6 +136,19 @@ export class PaymentsService {
       throw new BadRequestException('Invalid Google RTDN payload');
     }
 
+    const eventId =
+      payload?.message?.messageId ||
+      decoded['eventTimeMillis']?.toString() ||
+      this.computeEventHash(encodedData);
+    const marked = await this.tryMarkWebhookEventProcessed(
+      'google',
+      eventId,
+      payload,
+    );
+    if (!marked) {
+      return { processed: true, duplicate: true };
+    }
+
     const existing = await this.prisma.subscription.findUnique({
       where: { purchaseToken },
     });
@@ -182,10 +200,23 @@ export class PaymentsService {
       signedPayload,
       bundleId,
     ) as {
+      notificationUUID?: string;
       data?: {
         signedTransactionInfo?: string;
       };
     };
+
+    const eventId =
+      notificationPayload.notificationUUID ||
+      this.computeEventHash(signedPayload);
+    const marked = await this.tryMarkWebhookEventProcessed(
+      'apple',
+      eventId,
+      payload,
+    );
+    if (!marked) {
+      return { processed: true, duplicate: true };
+    }
 
     const signedTransactionInfo = notificationPayload?.data?.signedTransactionInfo;
     if (!signedTransactionInfo) {
@@ -727,6 +758,38 @@ export class PaymentsService {
   private decodeJwtSection<T = unknown>(section: string): T {
     const json = Buffer.from(section, 'base64url').toString('utf8');
     return JSON.parse(json) as T;
+  }
+
+  private computeEventHash(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private async tryMarkWebhookEventProcessed(
+    platform: 'google' | 'apple',
+    eventId: string,
+    payload: unknown,
+  ): Promise<boolean> {
+    const key = `webhook_event:${platform}:${eventId}`;
+    try {
+      await this.prisma.systemConfig.create({
+        data: {
+          key,
+          value: JSON.stringify({
+            processedAt: new Date().toISOString(),
+            platform,
+            eventId,
+            payload,
+          }),
+        },
+      });
+      return true;
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        this.logger.warn(`Duplicate webhook ignored: ${key}`);
+        return false;
+      }
+      throw error;
+    }
   }
 
   private base64UrlEncode(input: string | Buffer): string {

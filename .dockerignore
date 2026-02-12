@@ -1,4 +1,11 @@
 .git
+.gitignore
 node_modules
 dist
-postgresql_data
+coverage
+.env
+.env.*
+README.md
+internal
+*.log
+.DS_Store

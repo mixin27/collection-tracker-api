@@ -1,42 +1,34 @@
-FROM node:20-alpine AS base
+FROM node:20-bookworm-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 
-RUN apk add --no-cache openssl
-RUN npm install -g pnpm
-
+FROM base AS deps
 WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
-FROM base AS dependencies
-
-COPY package.json pnpm-*.yaml ./
-
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
-
-FROM dependencies AS builder
-
-COPY prisma ./prisma
-
-RUN pnpm install --offline
-RUN pnpm prisma:generate
-
+FROM deps AS build
+WORKDIR /app
+ARG DATABASE_URL=postgresql://postgres:postgres@db:5432/collection_tracker?schema=public
+ENV DATABASE_URL=${DATABASE_URL}
 COPY . .
+RUN pnpm prisma generate
+RUN pnpm run build
 
-RUN pnpm build
-RUN pnpm prune --prod
-
-FROM node:20-alpine AS production
-
-RUN apk add --no-cache openssl
-
+FROM base AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 
-WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/prisma ./prisma
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
+COPY --from=build /app/src/generated ./src/generated
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 4000
-
-CMD ["pnpm", "start:migrate:prod"]
-CMD ["node", "dist/src/main.js"]
+CMD ["./docker-entrypoint.sh"]

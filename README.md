@@ -356,8 +356,28 @@ pnpm run start:debug
 
 ### Docker (Recommended)
 
-```dockerfile
-# Coming soon
+```bash
+# 1) Copy env and set secrets
+cp .env.example .env
+
+# 2) For docker compose, set DATABASE_URL to use the db service host:
+# DATABASE_URL="postgresql://postgres:postgres@db:5432/collection_tracker?schema=public"
+
+# 3) Build and start app + postgres
+docker compose up -d --build
+
+# 4) View logs
+docker compose logs -f app
+```
+
+The container startup runs Prisma migrations automatically (`prisma migrate deploy`) before booting the NestJS server.
+
+```bash
+# Stop stack
+docker compose down
+
+# Stop and remove database volume
+docker compose down -v
 ```
 
 ### Manual Deployment

@@ -5,12 +5,18 @@ import {
   UpdateGlobalFreeConfigDto,
   UpdateTrialConfigDto,
 } from './dto/admin-entitlements.dto';
+import {
+  AdminListSubscriptionsQueryDto,
+  AdminUpdateSubscriptionDto,
+} from './dto/admin-subscriptions.dto';
+import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly subscriptionProfileService: SubscriptionProfileService,
   ) {}
 
   async getEntitlementsConfig() {
@@ -103,6 +109,75 @@ export class AdminService {
     });
 
     return this.getEntitlementsConfig();
+  }
+
+  async listSubscriptions(query: AdminListSubscriptionsQueryDto) {
+    const where: any = {};
+    if (query.userId) where.userId = query.userId;
+    if (query.status) where.status = query.status;
+    if (query.platform) where.platform = query.platform;
+
+    const limit = query.limit ?? 50;
+    const offset = query.offset ?? 0;
+
+    const [subscriptions, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        where,
+        orderBy: [{ updatedAt: 'desc' }],
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.subscription.count({ where }),
+    ]);
+
+    return {
+      subscriptions,
+      total,
+      limit,
+      offset,
+      hasMore: offset + subscriptions.length < total,
+    };
+  }
+
+  async updateSubscription(
+    adminUserId: string,
+    subscriptionId: string,
+    dto: AdminUpdateSubscriptionDto,
+  ) {
+    const existing = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { id: true, userId: true },
+    });
+    if (!existing) {
+      return { updated: false, reason: 'not_found' };
+    }
+
+    const updated = await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        status: dto.status,
+        tier: dto.tier,
+        purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : undefined,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+        autoRenewing: dto.autoRenewing,
+        productId: dto.productId,
+        lastVerifiedAt: new Date(),
+      },
+    });
+
+    await this.subscriptionProfileService.syncUserSubscriptionProfile(
+      existing.userId,
+    );
+
+    await this.logAdminChange(adminUserId, 'admin_subscription_updated', {
+      subscriptionId,
+      changes: dto,
+    });
+
+    return {
+      updated: true,
+      subscription: updated,
+    };
   }
 
   private async getJsonSystemConfig(

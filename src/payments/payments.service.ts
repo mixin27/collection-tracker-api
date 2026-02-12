@@ -16,10 +16,10 @@ import {
   PaymentPlatform,
   SubscriptionStatus,
   SubscriptionTier,
-} from '@/generated/prisma/client';
+} from '@/generated/prisma/enums';
 import { PrismaService } from '@/prisma/prisma.service';
 import { VerifyPurchaseDto } from './dto/payment.dto';
-import { AuthUserLimits } from '@/common/decorators/current-user.decorator';
+import { SubscriptionProfileService } from '@/subscription/subscription-profile.service';
 
 interface NormalizedVerificationResult {
   platform: PaymentPlatform;
@@ -41,6 +41,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly subscriptionProfileService: SubscriptionProfileService,
   ) {}
 
   async verifyPurchase(userId: string, dto: VerifyPurchaseDto) {
@@ -86,7 +87,7 @@ export class PaymentsService {
       },
     });
 
-    await this.syncUserSubscriptionProfile(userId);
+    await this.subscriptionProfileService.syncUserSubscriptionProfile(userId);
 
     return {
       verified: true,
@@ -100,6 +101,84 @@ export class PaymentsService {
       orderBy: [{ expiryDate: 'desc' }, { createdAt: 'desc' }],
     });
     return { subscriptions };
+  }
+
+  async reconcileActiveSubscriptions(limit: number = 200) {
+    const candidates = await this.prisma.subscription.findMany({
+      where: {
+        status: {
+          in: [
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.GRACE_PERIOD,
+            SubscriptionStatus.ON_HOLD,
+            SubscriptionStatus.PAUSED,
+          ],
+        },
+      },
+      orderBy: { lastVerifiedAt: 'asc' },
+      take: limit,
+      select: {
+        id: true,
+        userId: true,
+        platform: true,
+        productId: true,
+        purchaseToken: true,
+      },
+    });
+
+    let processed = 0;
+    let updated = 0;
+    let failed = 0;
+    const affectedUsers = new Set<string>();
+
+    for (const sub of candidates) {
+      processed += 1;
+      try {
+        const verification =
+          sub.platform === PaymentPlatform.GOOGLE_PLAY
+            ? await this.verifyGooglePlayPurchase({
+                productId: sub.productId,
+                purchaseToken: sub.purchaseToken,
+              })
+            : await this.verifyApplePurchase({
+                productId: sub.productId,
+                transactionId: sub.purchaseToken,
+              });
+
+        await this.prisma.subscription.update({
+          where: { id: sub.id },
+          data: {
+            status: verification.status,
+            tier: verification.tier,
+            purchaseDate: verification.purchaseDate,
+            expiryDate: verification.expiryDate,
+            autoRenewing: verification.autoRenewing,
+            orderId: verification.orderId,
+            receiptData: verification.receiptData,
+            lastVerifiedAt: new Date(),
+            verificationAttempts: { increment: 1 },
+          },
+        });
+        updated += 1;
+        affectedUsers.add(sub.userId);
+      } catch (error: any) {
+        failed += 1;
+        this.logger.warn(
+          `Reconciliation failed for subscription ${sub.id}: ${error?.message ?? 'unknown error'}`,
+        );
+      }
+    }
+
+    for (const userId of affectedUsers) {
+      await this.subscriptionProfileService.syncUserSubscriptionProfile(userId);
+    }
+
+    return {
+      processed,
+      updated,
+      failed,
+      usersSynced: affectedUsers.size,
+    };
   }
 
   async handleGoogleWebhook(
@@ -178,7 +257,9 @@ export class PaymentsService {
       },
     });
 
-    await this.syncUserSubscriptionProfile(existing.userId);
+    await this.subscriptionProfileService.syncUserSubscriptionProfile(
+      existing.userId,
+    );
     return { processed: true };
   }
 
@@ -276,7 +357,9 @@ export class PaymentsService {
           verificationAttempts: { increment: 1 },
         },
       });
-      await this.syncUserSubscriptionProfile(existing.userId);
+      await this.subscriptionProfileService.syncUserSubscriptionProfile(
+        existing.userId,
+      );
     }
 
     return { processed: true, matchedExisting: Boolean(existing) };
@@ -447,54 +530,6 @@ export class PaymentsService {
     };
   }
 
-  private async syncUserSubscriptionProfile(userId: string) {
-    const now = new Date();
-    const active = await this.prisma.subscription.findMany({
-      where: {
-        userId,
-        status: {
-          in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD],
-        },
-        expiryDate: {
-          gt: now,
-        },
-      },
-      select: { tier: true },
-    });
-
-    const tier =
-      active
-        .map((s) => s.tier)
-        .sort((a, b) => this.rankTier(b) - this.rankTier(a))[0] ||
-      SubscriptionTier.FREE;
-    const limits = this.getLimitsForTier(tier);
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        subscriptionTier: tier,
-        maxCollections: limits.maxCollections,
-        maxItemsPerCollection: limits.maxItemsPerCollection,
-        maxTags: limits.maxTags,
-        maxDevices: limits.maxDevices,
-      },
-    });
-  }
-
-  private getLimitsForTier(tier: SubscriptionTier): AuthUserLimits {
-    const limits = this.configService.get<Record<string, AuthUserLimits>>(
-      'app.limits',
-    );
-    const fallback: AuthUserLimits = {
-      maxCollections: 2,
-      maxItemsPerCollection: 50,
-      maxTags: 10,
-      maxDevices: 1,
-    };
-    if (!limits) return fallback;
-    return limits[tier.toLowerCase()] || fallback;
-  }
-
   private resolveTierFromProductId(productId: string): SubscriptionTier {
     const map = this.configService.get<Record<string, string>>(
       'app.payments.productTierMap',
@@ -507,12 +542,6 @@ export class PaymentsService {
       : productId.toLowerCase().includes('premium')
         ? SubscriptionTier.PREMIUM
         : SubscriptionTier.FREE;
-  }
-
-  private rankTier(tier: SubscriptionTier) {
-    if (tier === SubscriptionTier.ULTIMATE) return 3;
-    if (tier === SubscriptionTier.PREMIUM) return 2;
-    return 1;
   }
 
   private mapGoogleSubscriptionState(

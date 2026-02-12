@@ -17,7 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Public } from '@/common/decorators/public.decorator';
-import { PaymentPlatform } from '@/generated/prisma/client';
+import { PaymentPlatform } from '@/generated/prisma/enums';
 import { PaymentWebhookDto, VerifyPurchaseDto } from './dto/payment.dto';
 import { PaymentsService } from './payments.service';
 

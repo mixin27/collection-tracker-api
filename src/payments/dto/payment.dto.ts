@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PaymentPlatform } from '@/generated/prisma/client';
+import { PaymentPlatform } from '@/generated/prisma/enums';
 import {
   IsEnum,
   IsOptional,

@@ -37,6 +37,7 @@ import { StorageModule } from './storage/storage.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { SuggestionsModule } from './suggestions/suggestions.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { SuggestionsModule } from './suggestions/suggestions.module';
     AdminModule,
     PaymentsModule,
     SuggestionsModule,
+    AnalyticsModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,

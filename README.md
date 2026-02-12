@@ -156,6 +156,13 @@ The API will be available at `http://localhost:4000/api/v1`
 
 Once running, visit `http://localhost:4000/api/docs` for Swagger documentation.
 
+## 📱 Mobile Integration Docs
+
+- Payment & subscription API guide:
+  - `docs/payments-subscriptions-api-guide.md`
+- Ready-to-use Flutter service implementation:
+  - `docs/flutter-payments-service.md`
+
 ## 🔑 Authentication Flow
 
 ### Local Registration/Login

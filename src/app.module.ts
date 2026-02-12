@@ -28,6 +28,7 @@ import { SuggestionsModule } from './suggestions/suggestions.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { UsersModule } from './users/users.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { PriceHistoryModule } from './price-history/price-history.module';
 
 @Module({
   imports: [
@@ -66,7 +67,7 @@ import { SessionsModule } from './sessions/sessions.module';
     AnalyticsModule,
     UsersModule,
     SessionsModule,
-    // PriceHistoryModule,
+    PriceHistoryModule,
   ],
   controllers: [],
   providers: [

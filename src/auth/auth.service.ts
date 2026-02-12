@@ -19,6 +19,11 @@ import axios from 'axios';
 import { AuthProvider, SubscriptionTier } from '@/generated/prisma/client';
 import { JwtPayload } from '@/common/strategies/jwt.strategy';
 
+interface ClientInfo {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -32,7 +37,10 @@ export class AuthService {
   /**
    * Register a new user with local credentials
    */
-  async register(dto: RegisterDto): Promise<AuthResponseDto> {
+  async register(
+    dto: RegisterDto,
+    clientInfo?: ClientInfo,
+  ): Promise<AuthResponseDto> {
     // Check if user already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -82,6 +90,7 @@ export class AuthService {
       dto.deviceName,
       dto.deviceOs,
       dto.appVersion,
+      clientInfo,
     );
 
     // Generate tokens
@@ -98,6 +107,8 @@ export class AuthService {
       data: {
         accessToken,
         refreshToken,
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
       },
     });
 
@@ -119,7 +130,7 @@ export class AuthService {
   /**
    * Login with email and password
    */
-  async login(dto: LoginDto): Promise<AuthResponseDto> {
+  async login(dto: LoginDto, clientInfo?: ClientInfo): Promise<AuthResponseDto> {
     // Find user with account
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -155,6 +166,7 @@ export class AuthService {
       dto.deviceName,
       dto.deviceOs,
       dto.appVersion,
+      clientInfo,
     );
 
     // Generate tokens
@@ -172,6 +184,8 @@ export class AuthService {
         accessToken,
         refreshToken,
         lastActiveAt: new Date(),
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
       },
     });
 
@@ -199,7 +213,10 @@ export class AuthService {
   /**
    * Authenticate with Google OAuth (mobile native flow)
    */
-  async googleAuth(dto: GoogleAuthDto): Promise<AuthResponseDto> {
+  async googleAuth(
+    dto: GoogleAuthDto,
+    clientInfo?: ClientInfo,
+  ): Promise<AuthResponseDto> {
     // Verify Google ID token (implement token verification)
     const googleUser = await this.verifyGoogleIdToken(dto.idToken);
 
@@ -264,6 +281,7 @@ export class AuthService {
       dto.deviceName,
       dto.deviceOs,
       dto.appVersion,
+      clientInfo,
     );
 
     // Generate tokens
@@ -281,6 +299,8 @@ export class AuthService {
         accessToken,
         refreshToken,
         lastActiveAt: new Date(),
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
       },
     });
 
@@ -310,6 +330,7 @@ export class AuthService {
    */
   async refreshToken(
     dto: RefreshTokenDto,
+    clientInfo?: ClientInfo,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
       // Verify refresh token
@@ -353,6 +374,8 @@ export class AuthService {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           lastActiveAt: new Date(),
+          ipAddress: clientInfo?.ipAddress,
+          userAgent: clientInfo?.userAgent,
         },
       });
 
@@ -445,6 +468,7 @@ export class AuthService {
     deviceName: string,
     deviceOs: string,
     appVersion?: string,
+    clientInfo?: ClientInfo,
   ) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
@@ -458,6 +482,8 @@ export class AuthService {
         appVersion,
         isActive: true,
         expiresAt,
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
         refreshToken: '', // Will be updated later
       },
     });
@@ -472,6 +498,7 @@ export class AuthService {
     deviceName: string,
     deviceOs: string,
     appVersion?: string,
+    clientInfo?: ClientInfo,
   ) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -490,6 +517,8 @@ export class AuthService {
         isActive: true,
         expiresAt,
         lastActiveAt: new Date(),
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
       },
       create: {
         userId,
@@ -499,6 +528,8 @@ export class AuthService {
         appVersion,
         isActive: true,
         expiresAt,
+        ipAddress: clientInfo?.ipAddress,
+        userAgent: clientInfo?.userAgent,
         refreshToken: '',
       },
     });

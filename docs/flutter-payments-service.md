@@ -260,6 +260,7 @@ paymentsService.startPurchaseListener(
 ```
 
 ## Notes
+
 - Always gate premium features by backend response (`/auth/me` and/or `/payments/subscriptions`).
 - For restore purchases, run backend verify for each restored item.
 - Keep product IDs identical between stores, Flutter config, and backend tier map.

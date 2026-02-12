@@ -1,5 +1,17 @@
 import { registerAs } from '@nestjs/config';
 
+const parseJsonMap = (
+  raw: string | undefined,
+): Record<string, string> | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+};
+
 export default registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT!, 10) || 3000,
@@ -70,4 +82,28 @@ export default registerAs('app', () => ({
   adminEmails: process.env.ADMIN_EMAILS
     ? process.env.ADMIN_EMAILS.split(',').map((email) => email.trim())
     : [],
+
+  payments: {
+    google: {
+      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+      serviceAccountEmail: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL,
+      privateKey: process.env.GOOGLE_PLAY_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      webhookSecret: process.env.GOOGLE_WEBHOOK_SECRET,
+    },
+    apple: {
+      bundleId: process.env.APPLE_BUNDLE_ID,
+      issuerId: process.env.APPLE_ISSUER_ID,
+      keyId: process.env.APPLE_KEY_ID,
+      privateKey: process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      appAppleId: process.env.APPLE_APP_ID,
+      webhookSecret: process.env.APPLE_WEBHOOK_SECRET,
+      useSandboxApi: (process.env.APPLE_USE_SANDBOX_API || 'false') === 'true',
+    },
+    productTierMap: parseJsonMap(process.env.SUBSCRIPTION_PRODUCT_TIER_MAP) || {
+      premium_monthly: 'PREMIUM',
+      premium_yearly: 'PREMIUM',
+      ultimate_monthly: 'ULTIMATE',
+      ultimate_yearly: 'ULTIMATE',
+    },
+  },
 }));

@@ -35,6 +35,7 @@ import { SyncModule } from './sync/sync.module';
 import { LoansModule } from './loans/loans.module';
 import { StorageModule } from './storage/storage.module';
 import { AdminModule } from './admin/admin.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AdminModule } from './admin/admin.module';
     LoansModule,
     StorageModule,
     AdminModule,
+    PaymentsModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,

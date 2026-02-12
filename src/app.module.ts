@@ -16,18 +16,6 @@ import { PrismaModule } from './prisma/prisma.module';
 // Feature modules
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
-// import { UsersModule } from './users/users.module';
-// import { SessionsModule } from './sessions/sessions.module';
-// import { SyncModule } from './sync/sync.module';
-// import { CollectionsModule } from './collections/collections.module';
-// import { ItemsModule } from './items/items.module';
-// import { TagsModule } from './tags/tags.module';
-// import { PaymentsModule } from './payments/payments.module';
-// import { StorageModule } from './storage/storage.module';
-// import { LoansModule } from './loans/loans.module';
-// import { PriceHistoryModule } from './price-history/price-history.module';
-// import { SuggestionsModule } from './suggestions/suggestions.module';
-// import { AnalyticsModule } from './analytics/analytics.module';
 import { CollectionModule } from './collection/collection.module';
 import { ItemsModule } from './items/items.module';
 import { TagsModule } from './tags/tags.module';
@@ -38,6 +26,8 @@ import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { SuggestionsModule } from './suggestions/suggestions.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { UsersModule } from './users/users.module';
+import { SessionsModule } from './sessions/sessions.module';
 
 @Module({
   imports: [
@@ -74,15 +64,9 @@ import { AnalyticsModule } from './analytics/analytics.module';
     PaymentsModule,
     SuggestionsModule,
     AnalyticsModule,
-    // Uncomment as modules are created:
-    // UsersModule,
-    // SessionsModule,
-    // PaymentsModule,
-    // StorageModule,
-    // LoansModule,
+    UsersModule,
+    SessionsModule,
     // PriceHistoryModule,
-    // SuggestionsModule,
-    // AnalyticsModule,
   ],
   controllers: [],
   providers: [

@@ -28,6 +28,9 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 // import { PriceHistoryModule } from './price-history/price-history.module';
 // import { SuggestionsModule } from './suggestions/suggestions.module';
 // import { AnalyticsModule } from './analytics/analytics.module';
+import { CollectionModule } from './collection/collection.module';
+import { ItemsModule } from './items/items.module';
+import { TagsModule } from './tags/tags.module';
 
 @Module({
   imports: [
@@ -54,13 +57,13 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
     // Feature modules
     AuthModule,
+    CollectionModule,
+    ItemsModule,
+    TagsModule,
     // Uncomment as modules are created:
     // UsersModule,
     // SessionsModule,
     // SyncModule,
-    // CollectionsModule,
-    // ItemsModule,
-    // TagsModule,
     // PaymentsModule,
     // StorageModule,
     // LoansModule,

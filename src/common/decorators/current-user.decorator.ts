@@ -5,6 +5,14 @@ export interface AuthUser {
   email: string;
   subscriptionTier: string;
   deviceId?: string;
+  limits: AuthUserLimits;
+}
+
+export interface AuthUserLimits {
+  maxCollections: number;
+  maxItemsPerCollection: number;
+  maxTags: number;
+  maxDevices: number;
 }
 
 export const CurrentUser = createParamDecorator(

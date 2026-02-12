@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { createSign } from 'crypto';
+import { createSign, createVerify, X509Certificate } from 'crypto';
 import {
   PaymentPlatform,
   SubscriptionStatus,
@@ -97,13 +97,18 @@ export class PaymentsService {
     return { subscriptions };
   }
 
-  async handleGoogleWebhook(payload: any, secret?: string) {
+  async handleGoogleWebhook(
+    payload: any,
+    secret?: string,
+    authorizationHeader?: string,
+  ) {
     const expectedSecret = this.configService.get<string>(
       'app.payments.google.webhookSecret',
     );
     if (expectedSecret && secret !== expectedSecret) {
       throw new UnauthorizedException('Invalid Google webhook secret');
     }
+    await this.validateGoogleWebhookAuthToken(authorizationHeader);
 
     const encodedData = payload?.message?.data;
     if (!encodedData) {
@@ -172,7 +177,11 @@ export class PaymentsService {
       throw new BadRequestException('Missing Apple signedPayload');
     }
 
-    const notificationPayload = this.decodeJwtPayload(signedPayload) as {
+    const bundleId = this.configService.get<string>('app.payments.apple.bundleId');
+    const notificationPayload = this.verifyAndDecodeAppleJws(
+      signedPayload,
+      bundleId,
+    ) as {
       data?: {
         signedTransactionInfo?: string;
       };
@@ -183,7 +192,10 @@ export class PaymentsService {
       throw new BadRequestException('Missing Apple signedTransactionInfo');
     }
 
-    const transactionInfo = this.decodeJwtPayload(signedTransactionInfo) as {
+    const transactionInfo = this.verifyAndDecodeAppleJws(
+      signedTransactionInfo,
+      bundleId,
+    ) as {
       productId?: string;
       transactionId?: string;
       originalTransactionId?: string;
@@ -358,7 +370,13 @@ export class PaymentsService {
       );
     }
 
-    const transaction = this.decodeJwtPayload(payload.signedTransactionInfo) as {
+    const bundleIdFromConfig = this.configService.get<string>(
+      'app.payments.apple.bundleId',
+    );
+    const transaction = this.verifyAndDecodeAppleJws(
+      payload.signedTransactionInfo,
+      bundleIdFromConfig,
+    ) as {
       productId?: string;
       transactionId?: string;
       originalTransactionId?: string;
@@ -522,6 +540,60 @@ export class PaymentsService {
     return token;
   }
 
+  private async validateGoogleWebhookAuthToken(authorizationHeader?: string) {
+    const bearerToken = this.extractBearerToken(authorizationHeader);
+    if (!bearerToken) {
+      throw new UnauthorizedException('Missing Google webhook bearer token');
+    }
+
+    const response = await axios.get('https://oauth2.googleapis.com/tokeninfo', {
+      params: {
+        id_token: bearerToken,
+      },
+      timeout: 5000,
+    });
+
+    const tokenInfo = response.data as {
+      aud?: string;
+      iss?: string;
+      exp?: string;
+      email?: string;
+      email_verified?: string;
+    };
+
+    const expectedAudience = this.configService.get<string>(
+      'app.payments.google.webhookAudience',
+    );
+    const expectedEmail = this.configService.get<string>(
+      'app.payments.google.webhookExpectedEmail',
+    );
+    const nowUnix = Math.floor(Date.now() / 1000);
+    const exp = Number(tokenInfo.exp || '0');
+    const issuerOk =
+      tokenInfo.iss === 'accounts.google.com' ||
+      tokenInfo.iss === 'https://accounts.google.com';
+    const audienceOk = expectedAudience
+      ? tokenInfo.aud === expectedAudience
+      : Boolean(tokenInfo.aud);
+    const emailOk = expectedEmail
+      ? tokenInfo.email?.toLowerCase() === expectedEmail.toLowerCase()
+      : true;
+    const emailVerifiedOk =
+      tokenInfo.email_verified === undefined ||
+      tokenInfo.email_verified === 'true';
+
+    if (!issuerOk || !audienceOk || !emailOk || !emailVerifiedOk || exp < nowUnix) {
+      throw new UnauthorizedException('Invalid Google webhook bearer token');
+    }
+  }
+
+  private extractBearerToken(authorizationHeader?: string) {
+    if (!authorizationHeader) return null;
+    const [scheme, token] = authorizationHeader.split(' ');
+    if (!scheme || !token) return null;
+    return scheme.toLowerCase() === 'bearer' ? token : null;
+  }
+
   private createAppleApiJwt(params: {
     issuerId: string;
     keyId: string;
@@ -543,6 +615,83 @@ export class PaymentsService {
         kid: params.keyId,
       },
     );
+  }
+
+  private verifyAndDecodeAppleJws(
+    token: string,
+    expectedBundleId?: string,
+  ): Record<string, unknown> {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      throw new UnauthorizedException('Invalid Apple JWS format');
+    }
+
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    const header = this.decodeJwtSection<Record<string, unknown>>(encodedHeader);
+    const x5c = header['x5c'];
+    if (!Array.isArray(x5c) || x5c.length === 0) {
+      throw new UnauthorizedException('Apple JWS is missing x5c certificate chain');
+    }
+
+    const certs = x5c.map((cert) => {
+      if (typeof cert !== 'string') {
+        throw new UnauthorizedException('Invalid Apple x5c certificate entry');
+      }
+      return new X509Certificate(Buffer.from(cert, 'base64'));
+    });
+
+    this.validateAppleCertificateChain(certs);
+
+    const verifier = createVerify('SHA256');
+    verifier.update(`${encodedHeader}.${encodedPayload}`);
+    verifier.end();
+    const signature = Buffer.from(encodedSignature, 'base64url');
+    const signatureValid = verifier.verify(certs[0].publicKey, signature);
+    if (!signatureValid) {
+      throw new UnauthorizedException('Invalid Apple JWS signature');
+    }
+
+    const payload = this.decodeJwtSection<Record<string, unknown>>(encodedPayload);
+    if (expectedBundleId) {
+      const bundleId = payload['bundleId'] || payload['bid'];
+      if (bundleId && bundleId !== expectedBundleId) {
+        throw new UnauthorizedException('Apple JWS bundle id mismatch');
+      }
+    }
+
+    return payload;
+  }
+
+  private validateAppleCertificateChain(certs: X509Certificate[]) {
+    const now = Date.now();
+    for (const cert of certs) {
+      const validFrom = new Date(cert.validFrom).getTime();
+      const validTo = new Date(cert.validTo).getTime();
+      if (Number.isNaN(validFrom) || Number.isNaN(validTo)) {
+        throw new UnauthorizedException('Invalid Apple certificate validity');
+      }
+      if (now < validFrom || now > validTo) {
+        throw new UnauthorizedException('Apple certificate is expired or not active');
+      }
+    }
+
+    for (let i = 0; i < certs.length - 1; i++) {
+      const issuedByNext = certs[i].verify(certs[i + 1].publicKey);
+      if (!issuedByNext) {
+        throw new UnauthorizedException('Invalid Apple certificate chain signature');
+      }
+    }
+
+    const pinnedRootFingerprint = this.configService.get<string>(
+      'app.payments.apple.rootCertFingerprint256',
+    );
+    if (pinnedRootFingerprint) {
+      const actual = certs[certs.length - 1].fingerprint256.replaceAll(':', '');
+      const expected = pinnedRootFingerprint.replaceAll(':', '').toUpperCase();
+      if (actual !== expected) {
+        throw new UnauthorizedException('Apple root certificate fingerprint mismatch');
+      }
+    }
   }
 
   private createSignedJwt(
@@ -572,8 +721,12 @@ export class PaymentsService {
     if (parts.length < 2) {
       throw new BadRequestException('Invalid token payload format');
     }
-    const json = Buffer.from(parts[1], 'base64url').toString('utf8');
-    return JSON.parse(json);
+    return this.decodeJwtSection(parts[1]);
+  }
+
+  private decodeJwtSection<T = unknown>(section: string): T {
+    const json = Buffer.from(section, 'base64url').toString('utf8');
+    return JSON.parse(json) as T;
   }
 
   private base64UrlEncode(input: string | Buffer): string {

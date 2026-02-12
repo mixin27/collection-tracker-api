@@ -89,6 +89,8 @@ export default registerAs('app', () => ({
       serviceAccountEmail: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL,
       privateKey: process.env.GOOGLE_PLAY_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       webhookSecret: process.env.GOOGLE_WEBHOOK_SECRET,
+      webhookAudience: process.env.GOOGLE_WEBHOOK_AUDIENCE,
+      webhookExpectedEmail: process.env.GOOGLE_WEBHOOK_EXPECTED_EMAIL,
     },
     apple: {
       bundleId: process.env.APPLE_BUNDLE_ID,
@@ -98,6 +100,7 @@ export default registerAs('app', () => ({
       appAppleId: process.env.APPLE_APP_ID,
       webhookSecret: process.env.APPLE_WEBHOOK_SECRET,
       useSandboxApi: (process.env.APPLE_USE_SANDBOX_API || 'false') === 'true',
+      rootCertFingerprint256: process.env.APPLE_ROOT_CERT_FINGERPRINT_256,
     },
     productTierMap: parseJsonMap(process.env.SUBSCRIPTION_PRODUCT_TIER_MAP) || {
       premium_monthly: 'PREMIUM',

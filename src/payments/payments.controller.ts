@@ -58,9 +58,14 @@ export class PaymentsController {
     @Param('platform') platform: 'google' | 'apple',
     @Body() payload: PaymentWebhookDto,
     @Headers('x-webhook-secret') secret?: string,
+    @Headers('authorization') authorization?: string,
   ) {
     if (platform === 'google') {
-      return this.paymentsService.handleGoogleWebhook(payload, secret);
+      return this.paymentsService.handleGoogleWebhook(
+        payload,
+        secret,
+        authorization,
+      );
     }
     return this.paymentsService.handleAppleWebhook(payload, secret);
   }
@@ -76,12 +81,17 @@ export class PaymentsController {
   async handleWebhook(
     @Body() payload: PaymentWebhookDto,
     @Headers('x-webhook-secret') secret?: string,
+    @Headers('authorization') authorization?: string,
   ) {
     if (payload.signedPayload) {
       return this.paymentsService.handleAppleWebhook(payload, secret);
     }
     if (payload.message?.data) {
-      return this.paymentsService.handleGoogleWebhook(payload, secret);
+      return this.paymentsService.handleGoogleWebhook(
+        payload,
+        secret,
+        authorization,
+      );
     }
 
     return {
